@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Unit\Handlers;
+namespace Tests\Feature\CommandsTest;
 
 use Exception;
 use Tests\TestCase;
