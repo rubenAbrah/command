@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Unit\Commands;
+namespace Tests\Feature\CommandsTest;
 
 use App\Commands\Command;
 use App\Commands\RetryTwiceThenLogCommand;
