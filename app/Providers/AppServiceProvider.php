@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Exception;
+use App\Services\AdapterGenerator;
 use App\Handlers\CommandQueueHandler;
 use Illuminate\Support\ServiceProvider;
 use App\Handlers\RetryTwiceThenLogHandler;
@@ -25,6 +26,14 @@ class AppServiceProvider extends ServiceProvider
             );
 
             return $queueHandler;
+        });
+
+        $this->app->singleton('ioc', function ($app) {
+            return new \App\IoC\IoC();
+        });
+
+        $this->app->singleton('adapter', function ($app) {
+            return $app->make(AdapterGenerator::class);
         });
     }
 
