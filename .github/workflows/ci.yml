@@ -5,22 +5,48 @@ on: [pull_request]
 jobs:
   laravel-tests:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: laravel
+          MYSQL_USER: sail
+          MYSQL_PASSWORD: password
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, mysql, sqlite
+          coverage: none
 
       - name: Install dependencies
         run: |
           composer install --prefer-dist --no-interaction --no-progress
 
-      - name: Start Sail
-        run: ./vendor/bin/sail up -d
-
-      - name: Run queue
-        run: ./vendor/bin/sail artisan queue:work
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          echo "DB_CONNECTION=mysql" >> .env
+          echo "DB_HOST=127.0.0.1" >> .env
+          echo "DB_PORT=3306" >> .env
+          echo "DB_DATABASE=laravel" >> .env
+          echo "DB_USERNAME=sail" >> .env
+          echo "DB_PASSWORD=password" >> .env
+          echo "QUEUE_CONNECTION=sync" >> .env
 
       - name: Generate APP_KEY
-        run: ./vendor/bin/sail artisan key:generate --env=testing
+        run: php artisan key:generate
+
+      - name: Run migrations
+        run: php artisan migrate --force
 
       - name: Run tests
-        run: ./vendor/bin/sail artisan test
+        run: php artisan test
