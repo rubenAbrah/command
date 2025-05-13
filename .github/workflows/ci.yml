@@ -15,6 +15,7 @@ jobs:
 
       - name: Start Sail
         run: ./vendor/bin/sail up -d
+        run: ./vendor/bin/sail artisan queue:work
 
       - name: Generate APP_KEY
         run: ./vendor/bin/sail artisan key:generate --env=testing
