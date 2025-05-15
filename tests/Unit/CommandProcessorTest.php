@@ -2,73 +2,117 @@
 
 namespace Tests\Unit;
 
-use Mockery;
 use Tests\TestCase;
+use App\ThreadSafe\ThreadSafeCommandQueue;
+use App\Services\CommandProcessor;
 use App\Commands\Command;
-use App\Jobs\ProcessCommandJob;
-use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Contracts\Bus\Dispatcher;
-use App\Commands\StartCommandProcessorCommand;
-use App\Commands\HardStopCommandProcessorCommand;
-use App\Commands\SoftStopCommandProcessorCommand;
 
 class CommandProcessorTest extends TestCase
 {
-    public function test_job_dispatched()
-    {
-        Queue::fake();
+    private ThreadSafeCommandQueue $queue;
+    private CommandProcessor $processor;
 
-        $command = new class extends Command {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->queue = new ThreadSafeCommandQueue();
+        $this->processor = new CommandProcessor($this->queue, 1.0);
+    }
+
+    public function test_soft_stop_completes_all_tasks()
+    {
+        $executed = 0;
+        $command = new class ($executed) extends Command {
+            private $executed;
+            public function __construct(&$executed)
+            {
+                $this->executed = &$executed;
+            }
             public function execute()
             {
+                $this->executed++;
             }
         };
 
-        $job = new ProcessCommandJob($command);
-        app(Dispatcher::class)->dispatch($job);
+        $this->queue->add(clone $command);
+        $this->queue->add(clone $command);
+        $this->queue->add(clone $command);
 
-        Queue::assertPushed(ProcessCommandJob::class);
+        $this->queue->softStop();
+
+        $this->processor->start();
+
+        $this->assertEquals(3, $executed);
+        $this->assertFalse($this->processor->isRunning());
     }
 
-    public function test_start_command()
+    public function test_hard_stop_interrupts_processing()
     {
-        $startCommand = new StartCommandProcessorCommand(app(Dispatcher::class));
-        $startCommand->execute();
+        $executed = 0;
+        $command = new class ($executed) extends Command {
+            private $executed;
+            public function __construct(&$executed)
+            {
+                $this->executed = &$executed;
+            }
+            public function execute()
+            {
+                usleep(300000);
+                $this->executed++;
+            }
+        };
 
-        $this->assertEquals('sync', config('queue.default'));
+        for ($i = 0; $i < 10; $i++) {
+            $this->queue->add(clone $command);
+        }
+
+        $startTime = microtime(true);
+        $this->runWithTimeout(function () {
+            $this->processor->start();
+        }, 0.5);
+        usleep(200000);
+        $this->processor->requestStop();
+
+        $this->assertLessThan(5, $executed, 'Not all commands should have executed after hard stop');
+        $this->assertGreaterThan(0, $executed, 'At least one command should have started');
     }
 
-    public function test_hard_stop_command()
+    public function test_processor_handles_exceptions()
     {
-        Artisan::shouldReceive('call')
-            ->once()
-            ->with('queue:clear', [
-                '--queue' => 'default',
-                '--force' => true
-            ]);
+        $executed = false;
 
-        $hardStopCommand = new HardStopCommandProcessorCommand();
-        $hardStopCommand->execute();
+        $this->queue->add(new class extends Command {
+            public function execute()
+            {
+                throw new \RuntimeException("Test exception");
+            }
+        });
 
-        $this->assertTrue(true);
+        $this->queue->add(new class ($executed) extends Command {
+            private $executed;
+            public function __construct(&$executed)
+            {
+                $this->executed = &$executed;
+            }
+            public function execute()
+            {
+                $this->executed = true;
+            }
+        });
+
+        $this->queue->softStop();
+        $this->processor->start();
+
+        $this->assertTrue($executed);
     }
 
-    public function test_soft_stop_command()
+    private function runWithTimeout(callable $function, float $timeout): void
     {
-        Artisan::shouldReceive('call')
-            ->once()
-            ->with('queue:restart');
+        $start = microtime(true);
+        $function();
 
-        $softStopCommand = new SoftStopCommandProcessorCommand();
-        $softStopCommand->execute();
-
-        $this->assertTrue(true);
-    }
-
-    protected function tearDown(): void
-    {
-        Mockery::close();
-        parent::tearDown();
+        if ((microtime(true) - $start) > $timeout) {
+            $this->processor->requestStop();
+        }
     }
 }
