@@ -1,66 +1,118 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+### Решение: Архитектура системы для проведения космических боев  
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+#### **1. Набор микросервисов и веб-приложений**  
 
-## About Laravel
+Система будет состоять из следующих микросервисов и приложений:  
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+1. **User Service** – управление пользователями, аутентификация, профили.  
+2. **Tournament Service** – создание, управление и проведение турниров.  
+3. **Matchmaking Service** – организация боев (матчмейкинг, уведомления).  
+4. **Battle Service** – проведение боев, обработка результатов.  
+5. **Rating Service** – расчет и хранение рейтинга игроков и турниров.  
+6. **Replay Service** – хранение и воспроизведение завершенных боев.  
+7. **Notification Service** – отправка уведомлений игрокам.  
+8. **Agent Gateway** – шлюз для взаимодействия с клиентским приложением (Агент).  
+9. **Frontend (Web & Mobile)** – интерфейс для пользователей.  
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+#### **2. Диаграмма взаимодействия микросервисов**  
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+```plaintext
+┌─────────────────┐       ┌──────────────────┐       ┌─────────────────┐
+│   Frontend      │──────▶│   User Service   │◀──────│  Auth Service   │
+└─────────────────┘       └──────────────────┘       └─────────────────┘
+       │                         │
+       ▼                         ▼
+┌─────────────────┐       ┌──────────────────┐       ┌─────────────────┐
+│ Tournament Mgmt │──────▶│ Tournament Svc   │◀──────│  Matchmaking    │
+└─────────────────┘       └──────────────────┘       └─────────────────┘
+       │                         │
+       ▼                         ▼
+┌─────────────────┐       ┌──────────────────┐       ┌─────────────────┐
+│ Battle Service  │──────▶│   Rating Svc     │◀──────│  Replay Svc     │
+└─────────────────┘       └──────────────────┘       └─────────────────┘
+       │                         ▲
+       ▼                         │
+┌─────────────────┐       ┌──────────────────┐
+│ Agent Gateway   │──────▶│ Notification Svc │
+└─────────────────┘       └──────────────────┘
+```
 
-## Learning Laravel
+#### **3. Направления обмена сообщениями и Endpoints**  
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+| **Сервис**          | **Endpoints**                                                                 |
+|---------------------|------------------------------------------------------------------------------|
+| **User Service**    | `POST /register`, `GET /profile/{id}`, `PUT /profile/{id}`                   |
+| **Tournament Svc**  | `POST /tournaments`, `GET /tournaments/{id}`, `POST /tournaments/{id}/join`  |
+| **Matchmaking**     | `POST /matches`, `GET /matches/pending`, `POST /matches/{id}/start`          |
+| **Battle Service**  | `POST /battles`, `GET /battles/{id}`, `POST /battles/{id}/result`            |
+| **Rating Service**  | `GET /ratings/{userId}`, `POST /ratings/update`                              |
+| **Replay Service**  | `GET /replays/{battleId}`, `POST /replays/upload`                            |
+| **Notification**    | `POST /notify`, `GET /notifications/{userId}`                                |
+| **Agent Gateway**   | `POST /agent/connect`, `WS /agent/battle/{id}`                               |
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+#### **4. Узкие места и масштабирование**  
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- **Проблема:** Высокая нагрузка на **Battle Service** и **Agent Gateway** при массовых боях.  
+  **Решение:** Шардирование по игровым сессиям, кеширование состояний боев.  
 
-## Laravel Sponsors
+- **Проблема:** Задержки в **Matchmaking** при большом количестве игроков.  
+  **Решение:** Использование очередей (Kafka/RabbitMQ) для асинхронного матчмейкинга.  
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+- **Проблема:** Рост данных в **Replay Service**.  
+  **Решение:** Хранение реплеев в объектном хранилище (S3), сжатие данных.  
 
-### Premium Partners
+#### **5. Компоненты с изменяемыми требованиями (OCP)**  
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+- **Battle Service** – логика боев может меняться (новые правила, механики).  
+  **Решение:** Плагинная архитектура, вынос правил в конфигурацию.  
 
-## Contributing
+- **Rating Service** – алгоритмы расчета рейтинга могут дорабатываться.  
+  **Решение:** Стратегия через Dependency Injection, отдельный модуль расчетов.  
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+#### **6. User Stories**  
 
-## Code of Conduct
+1. **User Service**  
+   - Как игрок, я хочу зарегистрироваться, чтобы участвовать в турнирах.  
+   - Как администратор, я хочу модерировать пользователей.  
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+2. **Tournament Service**  
+   - Как организатор, я хочу создать турнир, чтобы пригласить игроков.  
+   - Как игрок, я хочу подать заявку на турнир.  
 
-## Security Vulnerabilities
+3. **Matchmaking Service**  
+   - Как система, я хочу находить соперников для боя.  
+   - Как игрок, я хочу получить уведомление о начале боя.  
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+4. **Battle Service**  
+   - Как игрок, я хочу управлять кораблем в бою.  
+   - Как система, я хочу обрабатывать результаты боя.  
 
-## License
+5. **Rating Service**  
+   - Как игрок, я хочу видеть свой рейтинг.  
+   - Как система, я хочу обновлять рейтинг после боя.  
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+6. **Replay Service**  
+   - Как игрок, я хочу пересмотреть прошедший бой.  
+
+7. **Notification Service**  
+   - Как игрок, я хочу получать уведомления о событиях.  
+
+#### **7. Диаграмма моделей данных**  
+
+```plaintext
+User ────◄ Tournament  
+│          │  
+│          ▼  
+│       Participant  
+│          │  
+▼          ▼  
+Rating ◄── Battle ───► Replay  
+            │  
+            ▼  
+        Notification  
+```
+
+**Пояснения:**  
+- **User** связан с **Tournament** через участников (**Participant**).  
+- **Battle** влияет на **Rating** и сохраняет **Replay**.  
+- **Notification** отправляется при событиях в **Tournament/Battle**.  
