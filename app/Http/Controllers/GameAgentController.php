@@ -13,7 +13,6 @@ class GameAgentController extends Controller
     public function handleMessage(Request $request, ThreadSafeCommandQueue $queue)
     {
         $data = Validator::make($request->all(), [
-            'gameId' => 'required|string',
             'objectId' => 'required|string',
             'operationId' => 'required|string',
             'args' => 'nullable|array',
@@ -21,7 +20,7 @@ class GameAgentController extends Controller
 
 
         $message = new AgentMessageDTO(
-            $request->input('gameId'),
+            $request->game_id,
             $request->input('objectId'),
             $request->input('operationId'),
             $request->input('args', [])
