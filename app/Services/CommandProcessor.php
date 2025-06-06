@@ -2,61 +2,51 @@
 
 namespace App\Services;
 
-use App\ThreadSafe\ThreadSafeCommandQueue;
+use App\CommandProcessing\NormalState;
+use App\CommandProcessing\StateInterface;
 use App\Commands\Command;
-use Illuminate\Support\Facades\Log;
+use App\ThreadSafe\ThreadSafeCommandQueue;
 
 class CommandProcessor
 {
     private ThreadSafeCommandQueue $queue;
     private bool $shouldStop = false;
+    private ?StateInterface $currentState;
     private bool $isRunning = false;
-    private float $timeoutSeconds;
+    private int $idleTimeoutMs;
 
-    public function __construct(ThreadSafeCommandQueue $queue, float $timeoutSeconds = 5.0)
-    {
+    public function __construct(
+        ThreadSafeCommandQueue $queue,
+        int $idleTimeoutMs = 100
+    ) {
         $this->queue = $queue;
-        $this->timeoutSeconds = $timeoutSeconds;
+        $this->currentState = new NormalState();
+        $this->idleTimeoutMs = $idleTimeoutMs;
     }
 
     public function start(): void
     {
-        if ($this->isRunning) {
-            throw new \RuntimeException('Processor is already running');
-        }
-
         $this->isRunning = true;
-        $this->shouldStop = false;
-
-        $startTime = microtime(true);
-
-        while (
-            !$this->shouldStop &&
-            !($this->queue->shouldStop() && $this->queue->count() === 0) &&
-            (microtime(true) - $startTime) < $this->timeoutSeconds
-        ) {
-
-            if ($this->shouldStop) {
-                break;
-            }
-
+        
+        while ($this->shouldContinueProcessing()) {
             $command = $this->queue->get();
-
+            
             if ($command === null) {
-                usleep(10000);
+                usleep($this->idleTimeoutMs * 1000);
                 continue;
             }
 
-            try {
-                $command->execute();
-            } catch (\Exception $e) {
-                Log::error('Command failed: ' . get_class($command), [
-                    'exception' => $e->getMessage()
-                ]);
-            }
+            $this->currentState = $this->currentState->handle($command);
         }
-
+        
         $this->isRunning = false;
+    }
+
+    private function shouldContinueProcessing(): bool
+    {
+        return !$this->shouldStop && 
+               $this->currentState !== null &&
+               !$this->queue->shouldStop();
     }
 
     public function requestStop(): void
@@ -67,5 +57,10 @@ class CommandProcessor
     public function isRunning(): bool
     {
         return $this->isRunning;
+    }
+
+    public function getCurrentState(): ?string
+    {
+        return $this->currentState ? get_class($this->currentState) : null;
     }
 }
